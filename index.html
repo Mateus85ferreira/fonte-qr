@@ -9,6 +9,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
+<script>if(typeof qrcode==="undefined")document.write('<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"><\/script>')</script>
+<script>if(typeof jsQR==="undefined")document.write('<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"><\/script>')</script>
 <style>
 :root{
   --ink:#05161b;
@@ -158,6 +160,8 @@ input[type=range]{width:100%;margin-top:10px;accent-color:var(--teal)}
   </button>
 </div>
 
+<div id="errBox" style="display:none;margin:0 0 12px;padding:12px 14px;border-radius:14px;background:rgba(239,122,109,.12);border:1px solid rgba(239,122,109,.5);color:#ef7a6d;font-family:'JetBrains Mono',monospace;font-size:12px;line-height:1.5"></div>
+
 <div class="seg">
   <button id="tabTx" class="on">Transmitir</button>
   <button id="tabRx">Receber</button>
@@ -256,6 +260,23 @@ input[type=range]{width:100%;margin-top:10px;accent-color:var(--teal)}
 
 <script>
 const $=id=>document.getElementById(id);
+function showErr(m){const e=$("errBox");if(!e)return;e.textContent=m;e.style.display="block"}
+let detector=null,scanBusy=false;
+if("BarcodeDetector" in window){try{detector=new BarcodeDetector({formats:["qr_code"]})}catch(e){detector=null}}
+async function decodeCanvasText(cv,W,H,cx){
+  if(detector){
+    try{const c=await detector.detect(cv);return(c&&c.length)?c[0].rawValue:null}
+    catch(e){detector=null}
+  }
+  if(typeof jsQR==="undefined")throw new Error("a biblioteca de leitura (jsQR) não carregou — recarregue a página");
+  const img=cx.getImageData(0,0,W,H);
+  const r=jsQR(img.data,W,H,{inversionAttempts:"dontInvert"});
+  return(r&&r.data)?r.data:null;
+}
+window.addEventListener("load",function(){
+  if(typeof qrcode==="undefined"||typeof jsQR==="undefined")
+    showErr("Uma biblioteca externa não carregou (conexão instável?). Recarregue a página antes de usar.");
+});
 
 /* ================= SOM (Web Audio, sem arquivos) ================= */
 const Snd=(function(){
@@ -420,19 +441,21 @@ async function startCam(){
 function scanLoop(){
   requestAnimationFrame(scanLoop);
   const v=$("cam");if(!v.videoWidth)return;
-  R.capN++;
+  R.capN++;updStats();
+  if(scanBusy)return;
   const g=$("grab"),W=640,H=Math.round(v.videoHeight*W/v.videoWidth);
   if(g.width!==W){g.width=W;g.height=H}
   const gx=g.getContext("2d",{willReadFrequently:true});
   gx.drawImage(v,0,0,W,H);
-  const img=gx.getImageData(0,0,W,H);
-  const res=jsQR(img.data,W,H,{inversionAttempts:"dontInvert"});
-  if(res&&res.data){
-    R.decN++;
-    let bytes=null;try{bytes=b64dec(res.data)}catch(e){}
-    if(bytes)handleFrame(bytes);else R.drop++;
-  }
-  updStats();
+  scanBusy=true;
+  decodeCanvasText(g,W,H,gx).then(function(txt){
+    scanBusy=false;
+    if(txt){
+      R.decN++;
+      let bytes=null;try{bytes=b64dec(txt)}catch(e){}
+      if(bytes)handleFrame(bytes);else R.drop++;
+    }
+  }).catch(function(err){scanBusy=false;showErr("Falha na leitura: "+err.message)});
 }
 function initSession(session,k,bs,dataLen){
   R.session=session;R.k=k;R.bs=bs;R.dataLen=dataLen;
@@ -591,24 +614,21 @@ async function processVideo(file){
     if(R.done)break;
     await seekTo(v,Math.min(t,Math.max(0,dur-.05)));
     gx.drawImage(v,0,0,W,H);
-    let res=null;
-    {
-      const img=gx.getImageData(0,0,W,H);
-      res=jsQR(img.data,W,H,{inversionAttempts:"dontInvert"});
-    }
-    if(!res){
+    let txt=null;
+    try{txt=await decodeCanvasText(g,W,H,gx)}
+    catch(err){st.textContent="Erro: "+err.message;return}
+    if(!txt){
       /* recorte central ampliado: salva QR filmado de longe */
       const s=Math.floor(Math.min(W,H)*.72),sx=(W-s)>>1,sy=(H-s)>>1,Z=800;
       const c2=processVideo._c2||(processVideo._c2=document.createElement("canvas"));
       c2.width=Z;c2.height=Z;
       const cx=c2.getContext("2d",{willReadFrequently:true});
       cx.drawImage(g,sx,sy,s,s,0,0,Z,Z);
-      const im2=cx.getImageData(0,0,Z,Z);
-      res=jsQR(im2.data,Z,Z,{inversionAttempts:"dontInvert"});
+      try{txt=await decodeCanvasText(c2,Z,Z,cx)}catch(err){}
     }
-    if(res&&res.data){
+    if(txt){
       R.decN++;
-      let b=null;try{b=b64dec(res.data)}catch(err){}
+      let b=null;try{b=b64dec(txt)}catch(err){}
       if(b)handleFrame(b);else R.drop++;
     }
     n++;
