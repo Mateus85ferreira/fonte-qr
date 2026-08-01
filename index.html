@@ -149,7 +149,7 @@ input[type=range]{width:100%;margin-top:10px;accent-color:var(--teal)}
   </div>
   <div class="brand">
     <h1>FONTE<em>·</em>QR</h1>
-    <p>TRANSFERÊNCIA ÓPTICA · FOUNTAIN CODE</p>
+    <p>TRANSFERÊNCIA ÓPTICA · FOUNTAIN CODE · v1.6</p>
   </div>
   <button class="spk" id="spk" title="Som">
     <svg id="spkIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -250,8 +250,7 @@ input[type=range]{width:100%;margin-top:10px;accent-color:var(--teal)}
   </div>
 
   <p class="hint">Aponte para o QR do outro celular preenchendo bem o quadro. Os pedaços chegam
-  <b>em qualquer ordem</b> — perder alguns não atrapalha. A câmera exige <b>HTTPS</b>: publique este arquivo
-  (Web App do Apps Script com <b>HtmlService</b> já resolve) e abra pela URL nos dois aparelhos.</p>
+  <b>em qualquer ordem</b> — perder alguns não atrapalha.</p>
 </div>
 
 <canvas id="grab" style="display:none"></canvas>
@@ -427,7 +426,7 @@ async function startCam(){
       video:{facingMode:"environment",width:{ideal:1280},height:{ideal:720}},audio:false});
   }catch(e){
     alert("Não consegui abrir a câmera: "+e.message+
-      "\n\nSem problema: use o botão \"Gravar vídeo do QR\" logo abaixo — ele funciona em qualquer lugar, inclusive aqui.");
+      "\n\nSem problema: use o botão \"Gravar vídeo do QR\" — ele funciona em qualquer lugar.");
     return;
   }
   const v=$("cam");v.srcObject=stream;await v.play();
@@ -437,3 +436,210 @@ async function startCam(){
   scanLoop();
 }
 function scanLoop(){
+  requestAnimationFrame(scanLoop);
+  const v=$("cam");if(!v.videoWidth)return;
+  R.capN++;updStats();
+  if(scanBusy)return;
+  const g=$("grab"),W=640,H=Math.round(v.videoHeight*W/v.videoWidth);
+  if(g.width!==W){g.width=W;g.height=H}
+  const gx=g.getContext("2d",{willReadFrequently:true});
+  gx.drawImage(v,0,0,W,H);
+  scanBusy=true;
+  decodeCanvasText(g,W,H,gx).then(function(txt){
+    scanBusy=false;
+    if(txt){
+      R.decN++;
+      let bytes=null;try{bytes=b64dec(txt)}catch(e){}
+      if(bytes)handleFrame(bytes);else R.drop++;
+    }
+  }).catch(function(err){scanBusy=false;showErr("Falha na leitura: "+err.message)});
+}
+function initSession(session,k,bs,dataLen){
+  R.session=session;R.k=k;R.bs=bs;R.dataLen=dataLen;
+  R.recovered=new Array(k).fill(null);R.nRec=0;R.pending=[];R.seen=new Set();
+  R.newF=0;R.dup=0;R.done=false;R.t0=performance.now();
+  $("doneBox").style.display="none";$("preview").innerHTML="";
+  $("rSess").textContent=session.toString(16).padStart(4,"0");
+  $("rBlk").textContent=bs+" B";
+  $("rPay").textContent=fmtKB(dataLen);
+  $("rLock").innerHTML='<span class="dot live"></span><span style="color:var(--teal)">travado</span>';
+  setupMosaic();Snd.lock();
+}
+function handleFrame(b){
+  if(b.length<16||b[0]!==0x44||b[1]!==0x51){R.drop++;return}
+  const session=b[2]|b[3]<<8,dataLen=readU32(b,4),
+        k=b[8]|b[9]<<8,bs=b[10]|b[11]<<8,seed=readU32(b,12);
+  if(b.length<16+bs||k===0){R.drop++;return}
+  if(R.session!==session)initSession(session,k,bs,dataLen);
+  if(R.done)return;
+  if(R.seen.has(seed)){R.dup++;return}
+  R.seen.add(seed);R.newF++;
+  const before=R.nRec;
+  const rng=frameRng(session,seed);
+  const idx=pickIndices(rng,k,pickDegree(rng,k));
+  addSymbol(new Set(idx),b.slice(16,16+bs));
+  if(R.nRec>before){
+    drawMosaic();
+    const now=performance.now();
+    if(now-R.lastTick>110){R.lastTick=now;Snd.tick(R.nRec/R.k)}
+  }
+  if(R.nRec>=R.k)finish();
+}
+function addSymbol(set,data){
+  for(const i of Array.from(set))
+    if(R.recovered[i]){xorInto(data,R.recovered[i]);set.delete(i)}
+  if(set.size===0)return;
+  if(set.size===1)recoverChain(set.values().next().value,data);
+  else R.pending.push({set:set,data:data});
+}
+function recoverChain(i0,d0){
+  const stack=[[i0,d0]];
+  while(stack.length){
+    const it=stack.pop(),i=it[0],d=it[1];
+    if(R.recovered[i])continue;
+    R.recovered[i]=d;R.nRec++;
+    const rest=[];
+    for(const p of R.pending){
+      if(p.set.has(i)){xorInto(p.data,d);p.set.delete(i)}
+      if(p.set.size===1)stack.push([p.set.values().next().value,p.data]);
+      else if(p.set.size>1)rest.push(p);
+    }
+    R.pending=rest;
+  }
+}
+/* mosaico: cada célula = um bloco do arquivo */
+let mcv,mctx,mCols,mRows,mCell;
+function setupMosaic(){
+  mcv=$("mosaic");
+  const dpr=Math.min(2,window.devicePixelRatio||1);
+  const w=mcv.clientWidth,h=76;
+  mcv.width=w*dpr;mcv.height=h*dpr;
+  mctx=mcv.getContext("2d");mctx.setTransform(dpr,0,0,dpr,0,0);
+  const area=(w-8)*(h-8);
+  mCell=Math.max(2,Math.floor(Math.sqrt(area/Math.max(1,R.k))));
+  mCols=Math.max(1,Math.floor((w-8)/mCell));
+  mRows=Math.ceil(R.k/mCols);
+  while(mRows*mCell>h-8&&mCell>2){mCell--;mCols=Math.floor((w-8)/mCell);mRows=Math.ceil(R.k/mCols)}
+  drawMosaic();
+}
+function drawMosaic(){
+  if(!mctx)return;
+  const w=mcv.clientWidth,h=76,gap=mCell>3?1:0;
+  mctx.clearRect(0,0,w,h);
+  const ox=Math.floor((w-mCols*mCell)/2),oy=Math.floor((h-mRows*mCell)/2);
+  for(var i=0;i<R.k;i++){
+    const c=i%mCols,r=Math.floor(i/mCols);
+    mctx.fillStyle=R.recovered[i]?"#2fd0b2":"#123641";
+    mctx.fillRect(ox+c*mCell,oy+r*mCell,mCell-gap,mCell-gap);
+  }
+}
+function finish(){
+  R.done=true;
+  $("rLock").innerHTML='<span class="dot"></span><span style="color:var(--teal)">completo</span>';
+  const total=new Uint8Array(R.k*R.bs);
+  for(var i=0;i<R.k;i++)total.set(R.recovered[i],i*R.bs);
+  const data=total.subarray(0,R.dataLen);
+  const nameLen=data[0]|data[1]<<8;
+  const name=new TextDecoder().decode(data.subarray(2,2+nameLen))||"arquivo.bin";
+  const fileBytes=data.slice(2+nameLen);
+  const ext=name.split(".").pop().toLowerCase();
+  const mime={jpg:"image/jpeg",jpeg:"image/jpeg",png:"image/png",gif:"image/gif",webp:"image/webp",
+    mp4:"video/mp4",mov:"video/quicktime",webm:"video/webm",mp3:"audio/mpeg",m4a:"audio/mp4",
+    pdf:"application/pdf",txt:"text/plain",csv:"text/csv"}[ext]||"application/octet-stream";
+  const url=URL.createObjectURL(new Blob([fileBytes],{type:mime}));
+  const secs=(performance.now()-R.t0)/1000;
+  $("doneInfo").textContent=name+" · "+fmtKB(fileBytes.length)+" em "+secs.toFixed(1)+"s ("+
+    (fileBytes.length/1024/secs).toFixed(1)+" KB/s)";
+  const dl=$("dlBtn");dl.href=url;dl.download=name;dl.textContent="Salvar "+name;
+  if(mime.startsWith("image/"))$("preview").innerHTML='<img src="'+url+'">';
+  else if(mime.startsWith("video/"))$("preview").innerHTML='<video src="'+url+'" controls playsinline></video>';
+  $("doneBox").style.display="block";
+  $("rxBar").style.width="100%";$("rxPct").textContent="100%";
+  drawMosaic();Snd.done();
+  $("doneBox").scrollIntoView({behavior:"smooth",block:"center"});
+}
+function updStats(){
+  const now=performance.now();
+  if(now-R.lastStat>=1000){
+    $("rCap").textContent=R.capN;
+    $("rDec").textContent=R.decN.toFixed(1);
+    R.capN=0;R.decN=0;R.lastStat=now;
+  }
+  $("rDrop").textContent=R.drop;
+  $("rFrames").textContent=R.newF+" / "+R.dup;
+  if(R.session!==null&&!R.done){
+    const secs=Math.max(.001,(now-R.t0)/1000);
+    $("rElap").textContent=Math.floor(secs)+" s";
+    $("rGood").textContent=((R.nRec*R.bs)/1024/secs).toFixed(1)+" KB/s";
+    const p=Math.min(100,100*R.nRec/R.k);
+    $("rxBar").style.width=p+"%";
+    $("rxPct").textContent=p.toFixed(0)+"%";
+    $("rxBlocks").textContent=R.nRec+" / "+R.k+" blocos";
+  }
+}
+window.addEventListener("resize",()=>{if(R.session!==null)setupMosaic()});
+
+/* ===== MODO VÍDEO: câmera nativa grava, a página decodifica quadro a quadro ===== */
+$("btnVid").onclick=()=>{Snd.unlock();$("vidIn").click()};
+$("vidIn").onchange=async e=>{
+  const f=e.target.files[0];if(!f)return;
+  e.target.value="";
+  await processVideo(f);
+};
+function seekTo(v,t){return new Promise(res=>{
+  const h=()=>{v.removeEventListener("seeked",h);res()};
+  v.addEventListener("seeked",h);v.currentTime=t;})}
+async function processVideo(file){
+  const st=$("vidStatus");st.style.display="block";
+  st.textContent="Preparando vídeo…";
+  const url=URL.createObjectURL(file);
+  const v=document.createElement("video");
+  v.muted=true;v.playsInline=true;v.preload="auto";v.src=url;
+  try{await new Promise((res,rej)=>{v.onloadedmetadata=res;v.onerror=rej})}catch(e){}
+  if(!v.duration||!isFinite(v.duration)){try{await v.play();v.pause()}catch(e){}}
+  const dur=v.duration;
+  if(!dur||!isFinite(dur)){st.textContent="Não consegui ler esse vídeo. Grave de novo, por favor.";return}
+  const W=Math.min(1152,v.videoWidth||1152);
+  const H=Math.round((v.videoHeight||W)*W/(v.videoWidth||W));
+  const g=$("grab");g.width=W;g.height=H;
+  const gx=g.getContext("2d",{willReadFrequently:true});
+  if(R.session===null)R.lastStat=performance.now();
+  const step=1/12;
+  let n=0,total=Math.max(1,Math.ceil(dur/step));
+  for(let t=0;t<dur;t+=step){
+    if(R.done)break;
+    await seekTo(v,Math.min(t,Math.max(0,dur-.05)));
+    gx.drawImage(v,0,0,W,H);
+    let txt=null;
+    try{txt=await decodeCanvasText(g,W,H,gx)}
+    catch(err){st.textContent="Erro: "+err.message;return}
+    if(!txt){
+      const s=Math.floor(Math.min(W,H)*.72),sx=(W-s)>>1,sy=(H-s)>>1,Z=800;
+      const c2=processVideo._c2||(processVideo._c2=document.createElement("canvas"));
+      c2.width=Z;c2.height=Z;
+      const cx=c2.getContext("2d",{willReadFrequently:true});
+      cx.drawImage(g,sx,sy,s,s,0,0,Z,Z);
+      try{txt=await decodeCanvasText(c2,Z,Z,cx)}catch(err){}
+    }
+    if(txt){
+      R.decN++;
+      let b=null;try{b=b64dec(txt)}catch(err){}
+      if(b)handleFrame(b);else R.drop++;
+    }
+    n++;
+    st.textContent="Analisando vídeo… "+Math.round(100*n/total)+"% · "+
+      (R.session!==null?R.nRec+" / "+R.k+" blocos":"procurando sinal");
+    updStats();
+  }
+  URL.revokeObjectURL(url);
+  if(R.done){st.style.display="none"}
+  else if(R.session===null){
+    st.textContent="Nenhum QR encontrado. Chegue mais perto, encha a tela com o QR e grave de novo.";
+  }else{
+    st.textContent="Faltam "+(R.k-R.nRec)+" de "+R.k+" blocos — grave mais alguns segundos do MESMO QR e envie de novo: continua de onde parou.";
+  }
+}
+</script>
+
+</body>
+</html>
