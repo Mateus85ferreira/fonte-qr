@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>FONTE-QR · Transferência óptica de arquivos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
+<style>
+:root{
+  --ink:#05161b;
+  --surface:#0a2129;
+  --surface-2:#0e2c36;
+  --line:#17414e;
+  --line-soft:#123641;
+  --teal:#2fd0b2;
+  --teal-deep:#0f8f7d;
+  --cyan:#79d8e6;
+  --warn:#efa94f;
+  --danger:#ef7a6d;
+  --txt:#dcefef;
+  --dim:#6f9aa3;
+  --display:"Space Grotesk",system-ui,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+  --r:14px;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html{background:var(--ink)}
+body{
+  font-family:var(--display);color:var(--txt);min-height:100dvh;
+  background:
+    radial-gradient(120% 70% at 50% -10%,rgba(47,208,178,.14),transparent 60%),
+    radial-gradient(90% 50% at 100% 100%,rgba(121,216,230,.07),transparent 60%),
+    var(--ink);
+  padding:0 16px calc(48px + env(safe-area-inset-bottom));max-width:600px;margin:0 auto;
+}
+
+/* ---------- app shell ---------- */
+.top{
+  position:sticky;top:0;z-index:20;margin:0 -16px;padding:14px 16px 12px;
+  background:linear-gradient(180deg,rgba(5,22,27,.97) 70%,rgba(5,22,27,0));
+  display:flex;align-items:center;gap:12px;
+}
+.mark{width:34px;height:34px;flex:none;border-radius:11px;background:var(--surface-2);
+  border:1px solid var(--line);display:grid;place-items:center}
+.mark svg{width:19px;height:19px}
+.brand h1{font-size:16px;font-weight:700;letter-spacing:.02em;line-height:1.1}
+.brand h1 em{font-style:normal;color:var(--teal)}
+.brand p{font-family:var(--mono);font-size:10px;color:var(--dim);letter-spacing:.06em;margin-top:2px}
+.spk{margin-left:auto;width:38px;height:38px;flex:none;border-radius:12px;background:var(--surface);
+  border:1px solid var(--line);color:var(--teal);display:grid;place-items:center;cursor:pointer}
+.spk.off{color:var(--dim)}
+.spk svg{width:18px;height:18px}
+
+/* ---------- segmented ---------- */
+.seg{display:flex;gap:4px;padding:4px;background:var(--surface);border:1px solid var(--line-soft);
+  border-radius:var(--r);margin:6px 0 18px}
+.seg button{flex:1;padding:11px 0;border:0;border-radius:10px;background:transparent;color:var(--dim);
+  font-family:var(--display);font-size:13px;font-weight:500;letter-spacing:.06em;cursor:pointer;
+  transition:background .18s,color .18s}
+.seg button.on{background:linear-gradient(180deg,var(--teal),var(--teal-deep));color:#04211d;font-weight:700}
+
+.panel{display:none;animation:fade .25s ease}
+.panel.on{display:block}
+@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+/* ---------- cards / stats ---------- */
+.card{background:var(--surface);border:1px solid var(--line-soft);border-radius:var(--r);padding:14px;margin-bottom:12px}
+.lbl{font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;color:var(--dim);text-transform:uppercase}
+.val{font-family:var(--mono);font-size:19px;font-weight:500;margin-top:3px;line-height:1.2}
+.val.t{color:var(--teal)} .val.c{color:var(--cyan)} .val.w{color:var(--warn)}
+.val.sm{font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
+.stats .card{margin:0;padding:11px 13px}
+
+.sect{font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;color:var(--dim);
+  text-transform:uppercase;margin:20px 2px 8px;display:flex;align-items:center;gap:10px}
+.sect::after{content:"";flex:1;height:1px;background:var(--line-soft)}
+
+/* ---------- controls ---------- */
+.btn{display:block;width:100%;padding:14px;border-radius:12px;cursor:pointer;text-align:center;
+  font-family:var(--display);font-size:14px;font-weight:600;letter-spacing:.03em;
+  background:transparent;border:1px solid var(--line);color:var(--teal);transition:.18s;text-decoration:none}
+.btn.solid{background:linear-gradient(180deg,var(--teal),var(--teal-deep));border-color:transparent;color:#04211d}
+.btn:active{transform:scale(.985)}
+.btn:disabled{opacity:.32;pointer-events:none}
+.btn+.btn{margin-top:8px}
+input[type=file]{display:none}
+select{width:100%;margin-top:5px;padding:9px 10px;border-radius:10px;background:var(--surface-2);
+  border:1px solid var(--line-soft);color:var(--txt);font-family:var(--mono);font-size:12.5px}
+input[type=range]{width:100%;margin-top:10px;accent-color:var(--teal)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px}
+
+/* ---------- QR ---------- */
+#qrwrap{display:none;margin-top:14px;padding:12px;border-radius:var(--r);background:#fff;
+  box-shadow:0 0 0 1px var(--line),0 12px 40px -12px rgba(47,208,178,.5)}
+#qrcv{display:block;width:100%;height:auto;image-rendering:pixelated}
+
+/* ---------- camera ---------- */
+#camwrap{display:none;position:relative;margin-bottom:12px;border-radius:var(--r);overflow:hidden;
+  border:1px solid var(--line)}
+#cam{display:block;width:100%;height:auto}
+.reticle{position:absolute;inset:14px;pointer-events:none}
+.reticle span{position:absolute;width:26px;height:26px;border:2px solid var(--teal);opacity:.8}
+.reticle span:nth-child(1){top:0;left:0;border-right:0;border-bottom:0;border-radius:8px 0 0 0}
+.reticle span:nth-child(2){top:0;right:0;border-left:0;border-bottom:0;border-radius:0 8px 0 0}
+.reticle span:nth-child(3){bottom:0;left:0;border-right:0;border-top:0;border-radius:0 0 0 8px}
+.reticle span:nth-child(4){bottom:0;right:0;border-left:0;border-top:0;border-radius:0 0 8px 0}
+
+/* ---------- progresso + mosaico ---------- */
+.prog{height:8px;background:var(--surface);border:1px solid var(--line-soft);border-radius:99px;overflow:hidden;margin:2px 0 6px}
+.prog i{display:block;height:100%;width:0;border-radius:99px;
+  background:linear-gradient(90deg,var(--teal-deep),var(--teal),var(--cyan));transition:width .18s ease}
+.progmeta{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:var(--dim);margin-bottom:14px}
+#mosaic{display:block;width:100%;height:76px;border-radius:10px;background:var(--surface);
+  border:1px solid var(--line-soft);margin-bottom:12px}
+
+/* ---------- conclusão ---------- */
+.done{display:none;border-radius:var(--r);padding:16px;margin-bottom:14px;
+  background:linear-gradient(180deg,rgba(47,208,178,.14),rgba(47,208,178,.04));
+  border:1px solid rgba(47,208,178,.45)}
+.done h3{font-size:15px;color:var(--teal);letter-spacing:.01em}
+.done .m{font-family:var(--mono);font-size:12px;color:var(--cyan);margin-top:4px}
+.done .btn{margin-top:12px}
+#preview{margin-top:12px}
+#preview img,#preview video{width:100%;border-radius:10px;display:block}
+
+.hint{font-size:12.5px;line-height:1.65;color:var(--dim);margin-top:10px}
+.hint b{color:var(--txt);font-weight:500}
+.dot{display:inline-block;width:6px;height:6px;border-radius:99px;background:var(--dim);margin-right:6px;vertical-align:middle}
+.dot.live{background:var(--teal);box-shadow:0 0 0 0 rgba(47,208,178,.6)}
+@media(prefers-reduced-motion:no-preference){.dot.live{animation:beat 1.6s ease-out infinite}}
+@keyframes beat{70%{box-shadow:0 0 0 8px rgba(47,208,178,0)}100%{box-shadow:0 0 0 0 rgba(47,208,178,0)}}
+</style>
+</head>
+<body>
+
+
+
+<div class="top">
+  <div class="mark">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#2fd0b2" stroke-width="1.9" stroke-linecap="round">
+      <rect x="3" y="3" width="6" height="6" rx="1.4"/><rect x="15" y="3" width="6" height="6" rx="1.4"/>
+      <rect x="3" y="15" width="6" height="6" rx="1.4"/><path d="M15 15h2m4 0v2m-6 4h2m4-2v2"/>
+    </svg>
+  </div>
+  <div class="brand">
+    <h1>FONTE<em>·</em>QR</h1>
+    <p>TRANSFERÊNCIA ÓPTICA · FOUNTAIN CODE</p>
+  </div>
+  <button class="spk" id="spk" title="Som">
+    <svg id="spkIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/>
+    </svg>
+  </button>
+</div>
+
+<div class="seg">
+  <button id="tabTx" class="on">Transmitir</button>
+  <button id="tabRx">Receber</button>
+</div>
+
+<!-- ============ TRANSMISSOR ============ -->
+<div id="pTx" class="panel on">
+  <label class="btn solid" for="fileIn">Escolher arquivo</label>
+  <input type="file" id="fileIn">
+
+  <div id="fileCard" style="display:none">
+    <div class="sect">Arquivo</div>
+    <div class="card">
+      <div class="lbl">Nome</div><div class="val sm" id="fName">—</div>
+      <div class="two">
+        <div><div class="lbl">Payload</div><div class="val t" id="fSize">—</div></div>
+        <div><div class="lbl">Blocos (K)</div><div class="val" id="fK">—</div></div>
+      </div>
+      <div class="two">
+        <div><div class="lbl">Sessão</div><div class="val c" id="fSess">—</div></div>
+        <div><div class="lbl">Bytes/quadro</div><div class="val" id="txBpf">—</div></div>
+      </div>
+    </div>
+
+    <div class="sect">Ajustes</div>
+    <div class="card">
+      <div class="lbl">Tamanho do bloco</div>
+      <select id="blockSel">
+        <option value="250">250 B — QR menor, leitura mais fácil</option>
+        <option value="400" selected>400 B — equilibrado</option>
+        <option value="600">600 B — mais rápido</option>
+        <option value="800">800 B — exige câmera boa</option>
+      </select>
+      <div style="margin-top:14px" class="lbl">Cadência · <span id="fpsLbl" style="color:var(--teal)">10</span> quadros/s</div>
+      <input type="range" id="fpsIn" min="2" max="30" value="10">
+    </div>
+  </div>
+
+  <button class="btn" id="btnTx" disabled>Iniciar transmissão</button>
+
+  <div id="qrwrap"><canvas id="qrcv" width="720" height="720"></canvas></div>
+
+  <div class="stats" style="margin-top:14px">
+    <div class="card"><div class="lbl">Quadros emitidos</div><div class="val t" id="txFrames">0</div></div>
+    <div class="card"><div class="lbl">Estado</div><div class="val" id="txState"><span class="dot"></span>parado</div></div>
+  </div>
+
+  <p class="hint"><b>Brilho no máximo</b> e o celular firme. O transmissor não para sozinho: ele repete
+  combinações novas até o receptor completar o arquivo. Quando o outro aparelho avisar
+  <b>transferência concluída</b>, é só parar aqui.</p>
+</div>
+
+<!-- ============ RECEPTOR ============ -->
+<div id="pRx" class="panel">
+  <button class="btn solid" id="btnVid">Gravar vídeo do QR</button>
+  <button class="btn" id="btnCam">Câmera ao vivo — só funciona fora do Apps Script</button>
+  <input type="file" id="vidIn" accept="video/*" capture="environment">
+  <div id="vidStatus" class="hint" style="display:none;margin:10px 2px"></div>
+
+  <div id="camwrap">
+    <video id="cam" playsinline muted></video>
+    <div class="reticle"><span></span><span></span><span></span><span></span></div>
+  </div>
+
+  <div class="done" id="doneBox">
+    <h3>Transferência concluída</h3>
+    <div class="m" id="doneInfo"></div>
+    <div id="preview"></div>
+    <a class="btn solid" id="dlBtn" download>Salvar arquivo</a>
+  </div>
+
+  <div class="prog"><i id="rxBar"></i></div>
+  <div class="progmeta"><span id="rxBlocks">0 / 0 blocos</span><span id="rxPct">0%</span></div>
+
+  <canvas id="mosaic"></canvas>
+
+  <div class="stats">
+    <div class="card"><div class="lbl">Captura</div><div class="val" id="rCap">0</div></div>
+    <div class="card"><div class="lbl">Decodificação</div><div class="val t" id="rDec">0.0</div></div>
+    <div class="card"><div class="lbl">Sinal</div><div class="val" id="rLock"><span class="dot"></span>aguardando</div></div>
+    <div class="card"><div class="lbl">Inválidos</div><div class="val" id="rDrop">0</div></div>
+    <div class="card"><div class="lbl">Goodput</div><div class="val t" id="rGood">0.0 KB/s</div></div>
+    <div class="card"><div class="lbl">Decorrido</div><div class="val" id="rElap">0 s</div></div>
+    <div class="card"><div class="lbl">Novos / dup.</div><div class="val" id="rFrames">0 / 0</div></div>
+    <div class="card"><div class="lbl">Sessão</div><div class="val c" id="rSess">—</div></div>
+    <div class="card"><div class="lbl">Bloco</div><div class="val" id="rBlk">—</div></div>
+    <div class="card"><div class="lbl">Payload</div><div class="val" id="rPay">—</div></div>
+  </div>
+
+  <p class="hint">Aponte para o QR do outro celular preenchendo bem o quadro. Os pedaços chegam
+  <b>em qualquer ordem</b> — perder alguns não atrapalha. A câmera exige <b>HTTPS</b>: publique este arquivo
+  (Web App do Apps Script com <b>HtmlService</b> já resolve) e abra pela URL nos dois aparelhos.</p>
+</div>
+
+<canvas id="grab" style="display:none"></canvas>
+
+<script>
+const $=id=>document.getElementById(id);
+
+/* ================= SOM (Web Audio, sem arquivos) ================= */
+const Snd=(function(){
+  let ctx=null,on=true;
+  try{const s=localStorage.getItem("fonteqr.som");if(s!==null)on=(s==="1")}catch(e){}
+  function ac(){if(!ctx){try{ctx=new (window.AudioContext||window.webkitAudioContext)()}catch(e){}}
+    if(ctx&&ctx.state==="suspended")ctx.resume();return ctx}
+  function tone(f,t0,dur,vol,type){
+    const c=ac(); if(!c)return;
+    const o=c.createOscillator(),g=c.createGain();
+    o.type=type||"sine";o.frequency.setValueAtTime(f,c.currentTime+t0);
+    g.gain.setValueAtTime(0.0001,c.currentTime+t0);
+    g.gain.exponentialRampToValueAtTime(vol,c.currentTime+t0+.012);
+    g.gain.exponentialRampToValueAtTime(0.0001,c.currentTime+t0+dur);
+    o.connect(g);g.connect(c.destination);o.start(c.currentTime+t0);o.stop(c.currentTime+t0+dur+.02);
+  }
+  return {
+    get on(){return on},
+    toggle(){on=!on;try{localStorage.setItem("fonteqr.som",on?"1":"0")}catch(e){}
+      if(on)tone(880,0,.09,.05,"triangle");return on},
+    unlock(){ac()},
+    tick(p){if(!on)return;tone(520+p*620,0,.045,.022,"triangle")},      // pulso por bloco novo
+    lock(){if(!on)return;tone(587.33,0,.1,.05,"triangle");tone(880,.07,.14,.05,"triangle")},
+    start(){if(!on)return;tone(392,0,.09,.045,"triangle");tone(523.25,.06,.12,.045,"triangle")},
+    stop(){if(!on)return;tone(392,0,.12,.04,"sine")},
+    done(){if(!on)return;[523.25,659.25,783.99,1046.5].forEach((f,i)=>tone(f,i*.085,.34,.06,"triangle"))}
+  };
+})();
+$("spk").onclick=()=>{const on=Snd.toggle();$("spk").classList.toggle("off",!on);
+  $("spkIcon").innerHTML=on
+    ?'<path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/>'
+    :'<path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="m17 9 5 6M22 9l-5 6"/>'};
+if(!Snd.on)$("spk").click(),$("spk").click(); // sincroniza ícone sem alterar estado
+document.addEventListener("pointerdown",()=>Snd.unlock(),{once:true});
+
+/* ================= util / fountain ================= */
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;var t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+function frameRng(session,seed){return mulberry32((Math.imul(seed,2654435761)^session^0xA5A5F00D)>>>0)}
+const DEG=[[1,.09],[2,.46],[3,.20],[4,.09],[5,.06],[8,.05],[16,.03],[32,.015],[64,.005]];
+function pickDegree(rng,k){var r=rng(),acc=0;for(var i=0;i<DEG.length;i++){acc+=DEG[i][1];if(r<acc)return Math.min(DEG[i][0],k)}return Math.min(2,k)}
+function pickIndices(rng,k,d){var s=new Set();while(s.size<d)s.add(Math.floor(rng()*k));return Array.from(s)}
+function xorInto(a,b){for(var i=0;i<a.length;i++)a[i]^=b[i]}
+function writeU32(b,o,v){b[o]=v&255;b[o+1]=(v>>>8)&255;b[o+2]=(v>>>16)&255;b[o+3]=(v>>>24)&255}
+function readU32(b,o){return (b[o]|b[o+1]<<8|b[o+2]<<16|b[o+3]<<24)>>>0}
+function b64enc(u8){var s='';for(var i=0;i<u8.length;i+=0x8000)s+=String.fromCharCode.apply(null,u8.subarray(i,i+0x8000));return btoa(s)}
+function b64dec(str){var s=atob(str),u=new Uint8Array(s.length);for(var i=0;i<s.length;i++)u[i]=s.charCodeAt(i);return u}
+function fmtKB(n){return n>=1048576?(n/1048576).toFixed(2)+" MB":(n/1024).toFixed(n<10240?1:0)+" KB"}
+
+/* ================= abas ================= */
+$("tabTx").onclick=()=>setTab(true);
+$("tabRx").onclick=()=>setTab(false);
+function setTab(tx){
+  $("tabTx").classList.toggle("on",tx);$("tabRx").classList.toggle("on",!tx);
+  $("pTx").classList.toggle("on",tx);$("pRx").classList.toggle("on",!tx);
+}
+
+/* ================= TRANSMISSOR ================= */
+const S={data:null,k:0,bs:400,session:0,seed:0,timer:null,frames:0,running:false};
+
+$("fileIn").onchange=async e=>{
+  const f=e.target.files[0]; if(!f)return;
+  const buf=new Uint8Array(await f.arrayBuffer());
+  const nb=new TextEncoder().encode(f.name.slice(0,200));
+  const data=new Uint8Array(2+nb.length+buf.length);
+  data[0]=nb.length&255;data[1]=(nb.length>>8)&255;
+  data.set(nb,2);data.set(buf,2+nb.length);
+  S.data=data;S.session=(Math.random()*65536)|0;
+  stopTx();recompute();
+  $("fileCard").style.display="block";
+  $("btnTx").disabled=false;
+  $("fName").textContent=f.name;
+  $("fSize").textContent=fmtKB(buf.length);
+  $("fSess").textContent=S.session.toString(16).padStart(4,"0");
+};
+$("blockSel").onchange=recompute;
+$("fpsIn").oninput=()=>{$("fpsLbl").textContent=$("fpsIn").value;
+  if(S.running){stopTimerOnly();startTimerOnly()}};
+
+function recompute(){
+  if(!S.data)return;
+  S.bs=+$("blockSel").value;
+  S.k=Math.ceil(S.data.length/S.bs);
+  $("fK").textContent=S.k;
+  $("txBpf").textContent=(16+S.bs)+" B";
+}
+function getBlock(i){
+  const b=new Uint8Array(S.bs);
+  b.set(S.data.subarray(i*S.bs,Math.min((i+1)*S.bs,S.data.length)));
+  return b;
+}
+function buildFrame(seed){
+  const rng=frameRng(S.session,seed);
+  const idx=pickIndices(rng,S.k,pickDegree(rng,S.k));
+  const pay=new Uint8Array(S.bs);
+  for(const i of idx)xorInto(pay,getBlock(i));
+  const h=new Uint8Array(16+S.bs);
+  h[0]=0x44;h[1]=0x51;
+  h[2]=S.session&255;h[3]=(S.session>>8)&255;
+  writeU32(h,4,S.data.length);
+  h[8]=S.k&255;h[9]=(S.k>>8)&255;
+  h[10]=S.bs&255;h[11]=(S.bs>>8)&255;
+  writeU32(h,12,seed>>>0);
+  h.set(pay,16);
+  return b64enc(h);
+}
+const qcv=$("qrcv"),qctx=qcv.getContext("2d");
+function renderQR(text){
+  const qr=qrcode(0,"L");qr.addData(text,"Byte");qr.make();
+  const n=qr.getModuleCount(),size=qcv.width,quiet=4;
+  const cell=Math.floor(size/(n+quiet*2)),off=Math.floor((size-cell*n)/2);
+  qctx.fillStyle="#fff";qctx.fillRect(0,0,size,size);
+  qctx.fillStyle="#000";
+  for(var r=0;r<n;r++)for(var c=0;c<n;c++)
+    if(qr.isDark(r,c))qctx.fillRect(off+c*cell,off+r*cell,cell,cell);
+}
+function tick(){
+  S.seed=(S.seed+1)>>>0;
+  try{renderQR(buildFrame(S.seed))}catch(e){console.error(e);return}
+  S.frames++;$("txFrames").textContent=S.frames;
+}
+function startTimerOnly(){S.timer=setInterval(tick,1000/(+$("fpsIn").value))}
+function stopTimerOnly(){if(S.timer){clearInterval(S.timer);S.timer=null}}
+$("btnTx").onclick=()=>{S.running?stopTx(true):startTx()};
+function startTx(){
+  if(!S.data)return;
+  S.running=true;S.frames=0;S.seed=(Math.random()*0xFFFFFF)|0;
+  $("qrwrap").style.display="block";
+  $("btnTx").textContent="Parar transmissão";$("btnTx").classList.add("solid");
+  $("txState").innerHTML='<span class="dot live"></span>emitindo';
+  Snd.start();tick();startTimerOnly();
+  $("qrwrap").scrollIntoView({behavior:"smooth",block:"center"});
+}
+function stopTx(user){
+  if(S.running&&user)Snd.stop();
+  S.running=false;stopTimerOnly();
+  $("btnTx").textContent="Iniciar transmissão";$("btnTx").classList.remove("solid");
+  $("txState").innerHTML='<span class="dot"></span>parado';
+}
+
+/* ================= RECEPTOR ================= */
+const R={session:null,k:0,bs:0,dataLen:0,recovered:null,nRec:0,pending:[],seen:null,
+  newF:0,dup:0,drop:0,t0:0,done:false,capN:0,decN:0,lastStat:0,lastTick:0};
+let stream=null;
+
+$("btnCam").onclick=startCam;
+async function startCam(){
+  Snd.unlock();
+  try{
+    stream=await navigator.mediaDevices.getUserMedia({
+      video:{facingMode:"environment",width:{ideal:1280},height:{ideal:720}},audio:false});
+  }catch(e){
+    alert("Não consegui abrir a câmera: "+e.message+
+      "\n\nSem problema: use o botão \"Gravar vídeo do QR\" logo abaixo — ele funciona em qualquer lugar, inclusive aqui.");
+    return;
+  }
+  const v=$("cam");v.srcObject=stream;await v.play();
+  $("camwrap").style.display="block";
+  $("btnCam").style.display="none";
+  R.lastStat=performance.now();
+  scanLoop();
+}
+function scanLoop(){
+  requestAnimationFrame(scanLoop);
+  const v=$("cam");if(!v.videoWidth)return;
+  R.capN++;
+  const g=$("grab"),W=640,H=Math.round(v.videoHeight*W/v.videoWidth);
+  if(g.width!==W){g.width=W;g.height=H}
+  const gx=g.getContext("2d",{willReadFrequently:true});
+  gx.drawImage(v,0,0,W,H);
+  const img=gx.getImageData(0,0,W,H);
+  const res=jsQR(img.data,W,H,{inversionAttempts:"dontInvert"});
+  if(res&&res.data){
+    R.decN++;
+    let bytes=null;try{bytes=b64dec(res.data)}catch(e){}
+    if(bytes)handleFrame(bytes);else R.drop++;
+  }
+  updStats();
+}
+function initSession(session,k,bs,dataLen){
+  R.session=session;R.k=k;R.bs=bs;R.dataLen=dataLen;
+  R.recovered=new Array(k).fill(null);R.nRec=0;R.pending=[];R.seen=new Set();
+  R.newF=0;R.dup=0;R.done=false;R.t0=performance.now();
+  $("doneBox").style.display="none";$("preview").innerHTML="";
+  $("rSess").textContent=session.toString(16).padStart(4,"0");
+  $("rBlk").textContent=bs+" B";
+  $("rPay").textContent=fmtKB(dataLen);
+  $("rLock").innerHTML='<span class="dot live"></span><span style="color:var(--teal)">travado</span>';
+  setupMosaic();Snd.lock();
+}
+function handleFrame(b){
+  if(b.length<16||b[0]!==0x44||b[1]!==0x51){R.drop++;return}
+  const session=b[2]|b[3]<<8,dataLen=readU32(b,4),
+        k=b[8]|b[9]<<8,bs=b[10]|b[11]<<8,seed=readU32(b,12);
+  if(b.length<16+bs||k===0){R.drop++;return}
+  if(R.session!==session)initSession(session,k,bs,dataLen);
+  if(R.done)return;
+  if(R.seen.has(seed)){R.dup++;return}
+  R.seen.add(seed);R.newF++;
+  const before=R.nRec;
+  const rng=frameRng(session,seed);
+  const idx=pickIndices(rng,k,pickDegree(rng,k));
+  addSymbol(new Set(idx),b.slice(16,16+bs));
+  if(R.nRec>before){
+    drawMosaic();
+    const now=performance.now();
+    if(now-R.lastTick>110){R.lastTick=now;Snd.tick(R.nRec/R.k)}
+  }
+  if(R.nRec>=R.k)finish();
+}
+function addSymbol(set,data){
+  for(const i of Array.from(set))
+    if(R.recovered[i]){xorInto(data,R.recovered[i]);set.delete(i)}
+  if(set.size===0)return;
+  if(set.size===1)recoverChain(set.values().next().value,data);
+  else R.pending.push({set:set,data:data});
+}
+function recoverChain(i0,d0){
+  const stack=[[i0,d0]];
+  while(stack.length){
+    const it=stack.pop(),i=it[0],d=it[1];
+    if(R.recovered[i])continue;
+    R.recovered[i]=d;R.nRec++;
+    const rest=[];
+    for(const p of R.pending){
+      if(p.set.has(i)){xorInto(p.data,d);p.set.delete(i)}
+      if(p.set.size===1)stack.push([p.set.values().next().value,p.data]);
+      else if(p.set.size>1)rest.push(p);
+    }
+    R.pending=rest;
+  }
+}
+/* mosaico: cada célula = um bloco do arquivo */
+let mcv,mctx,mCols,mRows,mCell;
+function setupMosaic(){
+  mcv=$("mosaic");
+  const dpr=Math.min(2,window.devicePixelRatio||1);
+  const w=mcv.clientWidth,h=76;
+  mcv.width=w*dpr;mcv.height=h*dpr;
+  mctx=mcv.getContext("2d");mctx.setTransform(dpr,0,0,dpr,0,0);
+  const area=(w-8)*(h-8);
+  mCell=Math.max(2,Math.floor(Math.sqrt(area/Math.max(1,R.k))));
+  mCols=Math.max(1,Math.floor((w-8)/mCell));
+  mRows=Math.ceil(R.k/mCols);
+  while(mRows*mCell>h-8&&mCell>2){mCell--;mCols=Math.floor((w-8)/mCell);mRows=Math.ceil(R.k/mCols)}
+  drawMosaic();
+}
+function drawMosaic(){
+  if(!mctx)return;
+  const w=mcv.clientWidth,h=76,gap=mCell>3?1:0;
+  mctx.clearRect(0,0,w,h);
+  const ox=Math.floor((w-mCols*mCell)/2),oy=Math.floor((h-mRows*mCell)/2);
+  for(var i=0;i<R.k;i++){
+    const c=i%mCols,r=Math.floor(i/mCols);
+    mctx.fillStyle=R.recovered[i]?"#2fd0b2":"#123641";
+    mctx.fillRect(ox+c*mCell,oy+r*mCell,mCell-gap,mCell-gap);
+  }
+}
+function finish(){
+  R.done=true;
+  $("rLock").innerHTML='<span class="dot"></span><span style="color:var(--teal)">completo</span>';
+  const total=new Uint8Array(R.k*R.bs);
+  for(var i=0;i<R.k;i++)total.set(R.recovered[i],i*R.bs);
+  const data=total.subarray(0,R.dataLen);
+  const nameLen=data[0]|data[1]<<8;
+  const name=new TextDecoder().decode(data.subarray(2,2+nameLen))||"arquivo.bin";
+  const fileBytes=data.slice(2+nameLen);
+  const ext=name.split(".").pop().toLowerCase();
+  const mime={jpg:"image/jpeg",jpeg:"image/jpeg",png:"image/png",gif:"image/gif",webp:"image/webp",
+    mp4:"video/mp4",mov:"video/quicktime",webm:"video/webm",mp3:"audio/mpeg",m4a:"audio/mp4",
+    pdf:"application/pdf",txt:"text/plain",csv:"text/csv"}[ext]||"application/octet-stream";
+  const url=URL.createObjectURL(new Blob([fileBytes],{type:mime}));
+  const secs=(performance.now()-R.t0)/1000;
+  $("doneInfo").textContent=name+" · "+fmtKB(fileBytes.length)+" em "+secs.toFixed(1)+"s ("+
+    (fileBytes.length/1024/secs).toFixed(1)+" KB/s)";
+  const dl=$("dlBtn");dl.href=url;dl.download=name;dl.textContent="Salvar "+name;
+  if(mime.startsWith("image/"))$("preview").innerHTML='<img src="'+url+'">';
+  else if(mime.startsWith("video/"))$("preview").innerHTML='<video src="'+url+'" controls playsinline></video>';
+  $("doneBox").style.display="block";
+  $("rxBar").style.width="100%";$("rxPct").textContent="100%";
+  drawMosaic();Snd.done();
+  $("doneBox").scrollIntoView({behavior:"smooth",block:"center"});
+}
+function updStats(){
+  const now=performance.now();
+  if(now-R.lastStat>=1000){
+    $("rCap").textContent=R.capN;
+    $("rDec").textContent=R.decN.toFixed(1);
+    R.capN=0;R.decN=0;R.lastStat=now;
+  }
+  $("rDrop").textContent=R.drop;
+  $("rFrames").textContent=R.newF+" / "+R.dup;
+  if(R.session!==null&&!R.done){
+    const secs=Math.max(.001,(now-R.t0)/1000);
+    $("rElap").textContent=Math.floor(secs)+" s";
+    $("rGood").textContent=((R.nRec*R.bs)/1024/secs).toFixed(1)+" KB/s";
+    const p=Math.min(100,100*R.nRec/R.k);
+    $("rxBar").style.width=p+"%";
+    $("rxPct").textContent=p.toFixed(0)+"%";
+    $("rxBlocks").textContent=R.nRec+" / "+R.k+" blocos";
+  }
+}
+window.addEventListener("resize",()=>{if(R.session!==null)setupMosaic()});
+
+/* ===== MODO VÍDEO: câmera nativa grava, a página decodifica quadro a quadro =====
+   Não usa getUserMedia, então funciona até dentro do iframe do Apps Script. */
+$("btnVid").onclick=()=>{Snd.unlock();$("vidIn").click()};
+$("vidIn").onchange=async e=>{
+  const f=e.target.files[0];if(!f)return;
+  e.target.value="";
+  await processVideo(f);
+};
+function seekTo(v,t){return new Promise(res=>{
+  const h=()=>{v.removeEventListener("seeked",h);res()};
+  v.addEventListener("seeked",h);v.currentTime=t;})}
+async function processVideo(file){
+  const st=$("vidStatus");st.style.display="block";
+  st.textContent="Preparando vídeo…";
+  const url=URL.createObjectURL(file);
+  const v=document.createElement("video");
+  v.muted=true;v.playsInline=true;v.preload="auto";v.src=url;
+  try{await new Promise((res,rej)=>{v.onloadedmetadata=res;v.onerror=rej})}catch(e){}
+  if(!v.duration||!isFinite(v.duration)){try{await v.play();v.pause()}catch(e){}}
+  const dur=v.duration;
+  if(!dur||!isFinite(dur)){st.textContent="Não consegui ler esse vídeo. Grave de novo, por favor.";return}
+  const W=Math.min(1152,v.videoWidth||1152);
+  const H=Math.round((v.videoHeight||W)*W/(v.videoWidth||W));
+  const g=$("grab");g.width=W;g.height=H;
+  const gx=g.getContext("2d",{willReadFrequently:true});
+  if(R.session===null)R.lastStat=performance.now();
+  const step=1/12;
+  let n=0,total=Math.max(1,Math.ceil(dur/step));
+  for(let t=0;t<dur;t+=step){
+    if(R.done)break;
+    await seekTo(v,Math.min(t,Math.max(0,dur-.05)));
+    gx.drawImage(v,0,0,W,H);
+    let res=null;
+    {
+      const img=gx.getImageData(0,0,W,H);
+      res=jsQR(img.data,W,H,{inversionAttempts:"dontInvert"});
+    }
+    if(!res){
+      /* recorte central ampliado: salva QR filmado de longe */
+      const s=Math.floor(Math.min(W,H)*.72),sx=(W-s)>>1,sy=(H-s)>>1,Z=800;
+      const c2=processVideo._c2||(processVideo._c2=document.createElement("canvas"));
+      c2.width=Z;c2.height=Z;
+      const cx=c2.getContext("2d",{willReadFrequently:true});
+      cx.drawImage(g,sx,sy,s,s,0,0,Z,Z);
+      const im2=cx.getImageData(0,0,Z,Z);
+      res=jsQR(im2.data,Z,Z,{inversionAttempts:"dontInvert"});
+    }
+    if(res&&res.data){
+      R.decN++;
+      let b=null;try{b=b64dec(res.data)}catch(err){}
+      if(b)handleFrame(b);else R.drop++;
+    }
+    n++;
+    st.textContent="Analisando vídeo… "+Math.round(100*n/total)+"% · "+
+      (R.session!==null?R.nRec+" / "+R.k+" blocos":"procurando sinal");
+    updStats();
+  }
+  URL.revokeObjectURL(url);
+  if(R.done){st.style.display="none"}
+  else if(R.session===null){
+    st.textContent="Nenhum QR encontrado. Chegue mais perto, encha a tela com o QR e grave de novo.";
+  }else{
+    st.textContent="Faltam "+(R.k-R.nRec)+" de "+R.k+" blocos — grave mais alguns segundos do MESMO QR e envie de novo: continua de onde parou.";
+  }
+}
+</script>
+
+</body>
+</html>
